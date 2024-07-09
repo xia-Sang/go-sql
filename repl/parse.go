@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/fatih/color"
 )
 var (
 	EXIT                  = errors.New("Exit")
@@ -103,9 +105,11 @@ func (s *Scanner) normalCommand() error {
 			}else{
 				//todo
 			}
+		}else{
+			line+=" "
 		}
-		data := currCommand+" "
-		line += data
+		index++
+		line += currCommand
 	}
 	// fmt.Println(line)
 	if flag{
@@ -126,7 +130,8 @@ func (s *Scanner) dealCommand() error {
 }
 
 func (s *Scanner) printPrompt() {
-	fmt.Printf("db:%d> ", s.line)
+	c := color.New(color.FgHiGreen, color.Bold)
+    c.Printf("db:%d> ", s.line)
 }
 
 func ParseCommand() {
