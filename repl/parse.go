@@ -29,6 +29,7 @@ var (
 
 func (s *Scanner) readInput() error {
 	reader := bufio.NewReader(os.Stdin)
+	reader.ReadByte('.')
 	line, err := reader.ReadBytes(';')
 	if err != nil {
 		os.Exit(1)
