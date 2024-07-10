@@ -154,6 +154,12 @@ func (s *Scanner) normalCommand() error {
 	} else {
 		currCommand := strings.ToUpper(string(s.curr))
 		if currCommand == SELECT {
+			//实现基础的insert解析
+			val, err := s.parseSelect()
+			if err != nil {
+				return err
+			}
+			fmt.Println(val)
 		}
 		if currCommand == INSERT {
 			//实现基础的insert解析
