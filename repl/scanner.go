@@ -153,7 +153,7 @@ func (s *Scanner) normalCommand() error {
 		return ErrorCommand
 	} else {
 		currCommand := strings.ToUpper(string(s.curr))
-		if currCommand == SELECT {
+		if currCommand == string(SELECT) {
 			//实现基础的select解析
 			val, err := s.parseSelect()
 			if err != nil {
@@ -161,7 +161,7 @@ func (s *Scanner) normalCommand() error {
 			}
 			fmt.Println(val)
 		}
-		if currCommand == INSERT {
+		if currCommand == string(INSERT) {
 			//实现基础的insert解析
 			val, err := s.parseInsert()
 			if err != nil {
@@ -169,7 +169,7 @@ func (s *Scanner) normalCommand() error {
 			}
 			fmt.Println(val)
 		}
-		if currCommand == DELETE {
+		if currCommand == string(DELETE) {
 			//实现基础的delete解析
 			val, err := s.parseDelete()
 			if err != nil {

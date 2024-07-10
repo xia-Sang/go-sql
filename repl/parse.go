@@ -6,21 +6,26 @@ import (
 	"strings"
 )
 
-type StatementType string
+// sql解析类型
+type SqlType string
 
 const (
+	SELECT SqlType = "SELECT"
+	DELETE SqlType = "DELETE"
+	INSERT SqlType = "INSERT"
+)
+
+// 其余相关常量
+const (
 	UNSUPPORTED = "N/A"
-	SELECT      = "SELECT"
-	DELETE      = "DELETE"
 	FROM        = "FROM"
 	WHERE       = "WHERE"
 	LIMIT       = "LIMIT"
-	INSERT      = "INSERT"
 	INTO        = "INTO"
 	VALUES      = "VALUES"
 	ASTERISK    = "*"
 )
-
+// insert解析
 type InsertTree struct {
 	Table   string     //table_name：需要插入新记录的表名
 	Columns []string   //column1, column2, ...：需要插入的字段名
@@ -35,7 +40,6 @@ type InsertTree struct {
 	INSERT INTO table_name (column1,column2,column3,...)
 	VALUES (value1,value2,value3,...);
 */
-
 func (s *Scanner) parseInsert() (ast *InsertTree, err error) {
 	ast = &InsertTree{}
 	// 不需要进行 解析 insert
@@ -84,11 +88,6 @@ func (s *Scanner) parseInsert() (ast *InsertTree, err error) {
 		}
 	}
 	columnCount := len(ast.Columns)
-	// todo 这个是存在问题的 我们是需要修复的
-	//if columnCount == 0 {
-	//	err = fmt.Errorf("%s expect VALUES or '(' here,error token:%s", s.buffer, s.curr)
-	//	return
-	//}
 	ast.Values = make([][]string, 0)
 
 rawLoop:
@@ -217,7 +216,7 @@ func (s *Scanner) parseSelect() (ast *SelectTree, err error) {
 
 	return
 }
-
+// 实现对于Delete的处理
 type DeleteTree struct {
 	Table string   //table_name：需要插入新记录的表名
 	Where []string //column1, column2, ...：要选择的字段名称，可以为多个字段。如果不指定字段名称，则会选择所有字段
