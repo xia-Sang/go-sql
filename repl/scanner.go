@@ -78,8 +78,8 @@ func (s *Scanner) scanData(reader *bufio.Reader) error {
 	}
 
 	//超过最大长度 标记错误
-	if len(data) > MAX_BUFFER_SIZE {
-		return ERROR_BUFFER_OVERFLOW
+	if len(data) > MaxBufferSize {
+		return ErrorBufferOverflow
 	}
 
 	s.buffer = data
@@ -100,7 +100,7 @@ func (s *Scanner) reset() {
 
 // 多行命令 进行不断地解析处理
 func (s *Scanner) next() {
-	for s.index < s.length && (s.buffer[s.index] == ' ' || s.buffer[s.index] == '\n') {
+	for s.index < s.length && (s.buffer[s.index] == ' ' || s.buffer[s.index] == '\n' || s.buffer[s.index] == '\r') {
 		s.index++
 	}
 	//只有每一次进来的时候 需要来更新一下 next
@@ -117,7 +117,7 @@ func (s *Scanner) next() {
 		return
 	}
 
-	for s.index < s.length && s.buffer[s.index] != ' ' && s.buffer[s.index] != ',' && s.buffer[s.index] != '(' && s.buffer[s.index] != ')' {
+	for s.index < s.length && s.buffer[s.index] != ' ' && s.buffer[s.index] != '\n' && s.buffer[s.index] != '\r' && s.buffer[s.index] != ',' && s.buffer[s.index] != '(' && s.buffer[s.index] != ')' {
 		s.index++
 	}
 
@@ -143,18 +143,18 @@ func (s *Scanner) dotCommand() error {
 	if s.next(); bytes.Equal(s.curr, []byte("exit")) {
 		return EXIT
 	}
-	return ERROR_COMMAND
+	return ErrorCommand
 }
 
 // 处理常规命令
 func (s *Scanner) normalCommand() error {
 	if s.next(); s.end {
 		fmt.Printf("Unrecognized command '%s' %s.\n", s.buffer, s.curr)
-		return ERROR_COMMAND
+		return ErrorCommand
 	} else {
 		currCommand := strings.ToUpper(string(s.curr))
 		if currCommand == SELECT {
-			//实现基础的insert解析
+			//实现基础的select解析
 			val, err := s.parseSelect()
 			if err != nil {
 				return err
@@ -164,6 +164,14 @@ func (s *Scanner) normalCommand() error {
 		if currCommand == INSERT {
 			//实现基础的insert解析
 			val, err := s.parseInsert()
+			if err != nil {
+				return err
+			}
+			fmt.Println(val)
+		}
+		if currCommand == DELETE {
+			//实现基础的delete解析
+			val, err := s.parseDelete()
 			if err != nil {
 				return err
 			}
