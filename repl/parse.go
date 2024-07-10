@@ -1,154 +1,264 @@
 package repl
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
+	"strconv"
+	"strings"
+)
 
-	"github.com/fatih/color"
-)
-var (
-	EXIT                  = errors.New("Exit")
-	ERROR_COMMAND         = errors.New("error command")
-	ERROR_BUFFER_OVERFLOW = errors.New("input exceeds buffer size")
-)
+// sql解析类型
+type SqlType string
 
 const (
-	MAX_BUFFER_SIZE = 512
+	SELECT SqlType = "SELECT"
+	DELETE SqlType = "DELETE"
+	INSERT SqlType = "INSERT"
 )
 
-type Scanner struct {
-	buffer []byte
-	index  int
-	length int
-	line   int
+// 其余相关常量
+const (
+	UNSUPPORTED = "N/A"
+	FROM        = "FROM"
+	WHERE       = "WHERE"
+	LIMIT       = "LIMIT"
+	INTO        = "INTO"
+	VALUES      = "VALUES"
+	ASTERISK    = "*"
+)
+// insert解析
+type InsertTree struct {
+	Table   string     //table_name：需要插入新记录的表名
+	Columns []string   //column1, column2, ...：需要插入的字段名
+	Values  [][]string //value1, value2, ...：需要插入的字段值
 }
 
-func newScanner() *Scanner {
-	return &Scanner{
-		buffer: make([]byte, MAX_BUFFER_SIZE),
-		index:  0,
-		line:   1,
-	}
-}
+// https://www.runoob.com/sql/sql-insert.html
+/*
+	INSERT INTO table_name
+	VALUES (value1,value2,value3,...);
 
-func showDb(){
-	fd,err:=os.Open("./repl/show.txt")
-	if err!=nil{
-		panic(err)
+	INSERT INTO table_name (column1,column2,column3,...)
+	VALUES (value1,value2,value3,...);
+*/
+func (s *Scanner) parseInsert() (ast *InsertTree, err error) {
+	ast = &InsertTree{}
+	// 不需要进行 解析 insert
+	// 解析 into
+	if s.next(); s.end || strings.ToUpper(string(s.curr)) != INTO {
+		err = fmt.Errorf("%s is not INSERT statement,error token: %s", s.buffer, s.curr)
+		return
 	}
-	defer fd.Close()
-	data,err:=io.ReadAll(fd)
-	if err!=nil{
-		panic(err)
-	}
-	fmt.Printf("%s\n",data)
-}
-// 读取新的一行
-func (s *Scanner) readNewLine() error {
-	reader := bufio.NewReader(os.Stdin)
-	line, _, err := reader.ReadLine()
-	if err != nil {
-		os.Exit(1)
-	}
-	length := len(line)
-	if length > MAX_BUFFER_SIZE {
-		return ERROR_BUFFER_OVERFLOW
-	}
-	s.buffer = line
-	s.length = length
-	s.line += 1
-	s.index = 0
-
-	return nil
-}
-
-func (s *Scanner) dotCommand() error {
-	if bytes.Equal(s.buffer[s.index:s.index+5], []byte(".exit")) {
-		return EXIT
-	}
-	return ERROR_COMMAND
-}
-// 多行命令 获取next
-func (s *Scanner) next() (data []byte) {
-    prev := s.index
-
-	for prev < s.length && s.buffer[prev] == ' ' {
-        prev++
-    }
-
-    s.index = prev
-    for prev < s.length && s.buffer[prev] != ' ' {
-        prev++
-    }
-    data = (s.buffer[s.index:prev])
-
-    for prev < s.length && s.buffer[prev] == ' ' {
-        prev++
-    }
-    s.index = prev
-    return data
-}
-
-func (s *Scanner) normalCommand() error {
-	line := ""
-	index:=1
-	flag:=false
-	for s.index < s.length {
-		currCommand:=string(s.next())
-		if index==1{
-			if currCommand=="select" || currCommand=="insert"{
-				flag=true
-			}else{
-				//todo
-			}
-		}else{
-			line+=" "
-		}
-		index++
-		line += currCommand
-	}
-	// fmt.Println(line)
-	if flag{
-		fmt.Println("Executed.")
-		return nil
-	}else{
-		fmt.Printf("Unrecognized command '%s'.\n", line)
-		return ERROR_COMMAND
-	}
-}
-
-func (s *Scanner) dealCommand() error {
-	if s.index == 0 && s.buffer[s.index] == '.' {
-		return s.dotCommand()
+	// 解析table name
+	if s.next(); s.end {
+		err = fmt.Errorf("%s expect table after INSERT INTO", s.buffer)
+		return
 	} else {
-		return s.normalCommand()
+		ast.Table = string(s.curr)
 	}
-}
-
-func (s *Scanner) printPrompt() {
-	c := color.New(color.FgHiGreen, color.Bold)
-    c.Printf("db:%d> ", s.line)
-}
-
-func ParseCommand() {
-	showDb()
-	scan := newScanner()
-	for {
-		scan.printPrompt()
-		err := scan.readNewLine()
-		if err != nil {
-			fmt.Println("Error reading input:", err)
-			continue
+	// 解析column或者values
+	if s.next(); s.end {
+		err = fmt.Errorf("%s expect VALUES or (colNames),error token:%s", s.buffer, s.curr)
+		return
+	} else {
+		currToken := strings.ToUpper(string(s.curr))
+		if currToken == "(" {
+			ast.Columns = make([]string, 0)
+			for {
+				if s.next(); s.end {
+					if len(ast.Columns) == 0 {
+						err = fmt.Errorf("%s get Columns failed", s.buffer)
+					}
+					return
+				} else {
+					currToken := string(s.curr)
+					if currToken == "," {
+						continue
+					} else if currToken == ")" {
+						break
+					} else if strings.ToUpper(currToken) == VALUES {
+						break
+					} else {
+						ast.Columns = append(ast.Columns, currToken)
+					}
+				}
+			}
+		} else if currToken != VALUES {
+			err = fmt.Errorf("%s expect VALUES or '(' here,error token:%s", s.buffer, s.curr)
+			return
 		}
-		if err := scan.dealCommand(); err != nil {
-			if err == EXIT {
+	}
+	columnCount := len(ast.Columns)
+	ast.Values = make([][]string, 0)
+
+rawLoop:
+	for {
+		if s.next(); s.end {
+			break rawLoop
+		} else {
+			currToken := string(s.curr)
+			if currToken == "," {
+				continue
+			}
+			if currToken == "(" {
+				var row []string
+				if columnCount != 0 {
+					row = make([]string, 0, columnCount)
+				} else {
+					row = make([]string, 0)
+				}
+				for {
+					if s.next(); s.end {
+						break rawLoop
+					} else {
+						currToken := string(s.curr)
+						if currToken == "," {
+							continue
+						} else if currToken == ")" {
+							if columnCount != 0 && len(row) != columnCount {
+								err = fmt.Errorf(
+									"%s expected column count is %d, got %d, %v",
+									s.buffer, columnCount, len(row), row,
+								)
+								return
+							}
+							ast.Values = append(ast.Values, row)
+							if columnCount == 0 {
+								columnCount = len(row)
+							}
+							break
+						} else {
+							row = append(row, currToken)
+						}
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+/*
+SelectTree 需要来实现select基础功能
+* SELECT * FROM foo WHERE id < 3 LIMIT 1;
+*/
+type SelectTree struct {
+	Projects []string
+	Table    string   //table_name：要查询的表名称
+	Where    []string //column1, column2, ...：要选择的字段名称，可以为多个字段。如果不指定字段名称，则会选择所有字段
+	Limit    int64
+}
+
+func (s *Scanner) parseSelect() (ast *SelectTree, err error) {
+	ast = &SelectTree{}
+	//不需要对于select进行处理
+
+	// 直接处理 */project
+	ast.Projects = make([]string, 0)
+	for {
+		if s.next(); s.end {
+			if len(ast.Projects) == 0 {
+				err = fmt.Errorf("%s get select projects failed", s.buffer)
+			}
+			return
+		} else {
+			currToken := strings.ToUpper(string(s.curr))
+			// *
+			if currToken == ASTERISK {
+				ast.Projects = append(ast.Projects, ASTERISK)
+			} else {
+				if currToken == "," {
+					continue
+				} else if strings.ToUpper(currToken) == FROM {
+					break
+				} else {
+					ast.Projects = append(ast.Projects, currToken)
+				}
+			}
+		}
+	}
+	// 获取到table
+	if s.next(); s.end {
+		return
+	} else {
+		ast.Table = string(s.curr)
+	}
+	// 获取到Where这个并不是必要的
+	if s.next(); s.end {
+		return
+	}
+	currToken := strings.ToUpper(string(s.curr))
+	if currToken == WHERE {
+		ast.Where = make([]string, 0)
+		for {
+			if s.next(); s.end {
+				if len(ast.Where) == 0 {
+					err = fmt.Errorf("missing WHERE clause")
+				}
+				return
+			}
+			currToken := string(s.curr)
+			if strings.ToUpper(currToken) == LIMIT {
 				break
 			}
-			fmt.Println("Error:", err)
+			ast.Where = append(ast.Where, currToken)
+		}
+	} else if currToken != LIMIT {
+		err = fmt.Errorf("expect WHERE or LIMIT here")
+		return
+	}
+
+	if s.next(); s.end {
+		err = fmt.Errorf("expect LIMIT clause here")
+		return
+	}
+	currToken = string(s.curr)
+	ast.Limit, err = strconv.ParseInt(currToken, 10, 64)
+
+	return
+}
+// 实现对于Delete的处理
+type DeleteTree struct {
+	Table string   //table_name：需要插入新记录的表名
+	Where []string //column1, column2, ...：要选择的字段名称，可以为多个字段。如果不指定字段名称，则会选择所有字段
+}
+
+func (s *Scanner) parseDelete() (ast *DeleteTree, err error) {
+	ast = &DeleteTree{}
+	// 不需要进行 解析 insert
+	// 解析 into
+	if s.next(); s.end || strings.ToUpper(string(s.curr)) != FROM {
+		err = fmt.Errorf("%s is not DElETE statement,error token: %s", s.buffer, s.curr)
+		return
+	}
+	// 解析table name
+	if s.next(); s.end {
+		err = fmt.Errorf("%s expect table after DELETE FROM", s.buffer)
+		return
+	} else {
+		ast.Table = string(s.curr)
+	}
+
+	// 获取到Where这个并不是必要的
+	if s.next(); s.end {
+		return
+	}
+	currToken := strings.ToUpper(string(s.curr))
+	if currToken == WHERE {
+		ast.Where = make([]string, 0)
+		for {
+			if s.next(); s.end {
+				if len(ast.Where) == 0 {
+					err = fmt.Errorf("missing WHERE clause")
+				}
+				return
+			}
+			currToken := string(s.curr)
+			if strings.ToUpper(currToken) == LIMIT {
+				break
+			}
+			ast.Where = append(ast.Where, currToken)
 		}
 	}
+
+	return
 }
