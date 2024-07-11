@@ -1,4 +1,4 @@
-package bptree
+package tree
 
 const (
 	ORDER = 3 //阶数
