@@ -1,4 +1,5 @@
-## Notes
+[中文版](./readme_zh.md)
+# Notes
 ## Implemented repl section
 > Basic interaction, implemented scanner and parse.
 
@@ -13,4 +14,3 @@ Let's start with the simple ones.
 ## Supplementing
 > Database learning is a big pit
 
-Translated with DeepL.com (free version)
