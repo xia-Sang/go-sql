@@ -67,9 +67,9 @@ func (logger *Logger) strEntries(node *BPTreeNode) string {
 	s := ""
 	for i, keyword := range node.Entries {
 		if logger.detail {
-			s += fmt.Sprintf("%v", keyword.info())
+			s += fmt.Sprintf("%s,%p", keyword.info(), keyword)
 		} else {
-			s += fmt.Sprintf("%v", keyword.Key)
+			s += fmt.Sprintf("%v,%p", keyword.Key, keyword)
 		}
 		if i != len(node.Entries)-1 {
 			s += ","
@@ -78,10 +78,10 @@ func (logger *Logger) strEntries(node *BPTreeNode) string {
 	return s
 }
 func (logger *Logger) PrintTree(node *BPTreeNode) {
-	fmt.Println("\n************BTree*************")
+	fmt.Println("\n************BPTree*************")
 
 	dsc := func(node *BPTreeNode, detail bool) string {
-		return logger.strEntries(node)
+		return fmt.Sprintf("%s:Leaf:%v", logger.strEntries(node), node.Leaf)
 	}
 	logger.tree(node, "child_nodes", dsc, 0, "    ")
 

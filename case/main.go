@@ -2,155 +2,288 @@ package main
 
 import (
 	"fmt"
+	"strings"
 )
 
-// ORDER 定义常量
-const (
-	ORDER = 3 // B+ 树的阶数
-)
-
-// BPlusTreeNode 定义 B+ 树的节点
-type BPlusTreeNode struct {
-	isLeaf   bool
-	keys     []int
-	children []*BPlusTreeNode
-	next     *BPlusTreeNode
+// BPTree 存储节点
+type BPTree struct {
+	Root      *BPTreeNode // 根节点
+	size      int         // 统计规模
+	m         int         // 度
+	splitShow bool        // 节点分列是否显示 默认不显示
 }
 
-// BPlusTree 定义 B+ 树
-type BPlusTree struct {
-	root *BPlusTreeNode
+// BPTreeNode 存储node 节点
+type BPTreeNode struct {
+	Parent   *BPTreeNode   // 父节点
+	Entries  []*Item       // 存储实体
+	Children []*BPTreeNode // 子节点 列表
 }
 
-// newBPlusTreeNode 创建一个新的 B+ 树节点
-func newBPlusTreeNode(isLeaf bool) *BPlusTreeNode {
-	return &BPlusTreeNode{
-		isLeaf:   isLeaf,
-		keys:     make([]int, 0),
-		children: make([]*BPlusTreeNode, 0),
+// Item 存储的实体数据
+type Item struct {
+	Key int
+	Val interface{}
+}
+
+func (i *Item) info() string {
+	return fmt.Sprintf("(%d:%v)", i.Key, i.Val)
+}
+
+// NewBPTree 构建新树
+func NewBPTree(order int) *BPTree {
+	if order < 3 {
+		order = 3
+	}
+	return &BPTree{m: order}
+}
+
+// Put 进行put操作 存储数据
+func (t *BPTree) Put(entry *Item) {
+	// 如果根节点为空，直接结束
+	if t.Root == nil {
+		t.Root = &BPTreeNode{Entries: []*Item{entry}}
+		t.size++
+		return
+	}
+	// 根节点不为空，进行插入操作，插入成功更新 size
+	if t.insert(t.Root, entry) {
+		t.size++
 	}
 }
 
-// NewBPlusTree 创建一个新的 B+ 树
-func NewBPlusTree() *BPlusTree {
-	root := newBPlusTreeNode(true)
-	return &BPlusTree{
-		root: root,
+// 进行插入操作
+func (t *BPTree) insert(node *BPTreeNode, entry *Item) bool {
+	// 如果是叶子节点，进行叶子节点插入
+	if t.isLeaf(node) {
+		return t.insertIntoLeaf(node, entry)
 	}
+	// 不是叶子节点，继续向下查找
+	return t.insertIntoInternal(node, entry)
 }
 
-// Insert 插入键值到 B+ 树中
-func (tree *BPlusTree) Insert(key int) {
-	root := tree.root
-	if len(root.keys) == 2*ORDER-1 {
-		newRoot := newBPlusTreeNode(false)
-		newRoot.children = append(newRoot.children, root)
-		tree.splitChild(newRoot, 0)
-		tree.root = newRoot
+// 不断地进行二分查找 进行搜索 知道找到最终的叶子节点所在位置
+// 节点一定是
+
+func (t *BPTree) insertIntoInternal(node *BPTreeNode, entry *Item) bool {
+	idx, ok := t.search(node, entry.Key)
+	if ok {
+		// node.Entries[idx] = entry
+		// return false
+		setNewEntry(node.Entries, idx, entry)
+		return false
 	}
-	tree.insertNonFull(tree.root, key)
+	return t.insert(node.Children[idx], entry)
 }
 
-// splitChild 拆分子节点
-func (tree *BPlusTree) splitChild(node *BPlusTreeNode, i int) {
-	child := node.children[i]
-	newNode := newBPlusTreeNode(child.isLeaf)
-	node.keys = append(node.keys[:i], append([]int{child.keys[ORDER-1]}, node.keys[i:]...)...)
-	node.children = append(node.children[:i+1], append([]*BPlusTreeNode{newNode}, node.children[i+1:]...)...)
+// 设置新条目
+func setNewEntry(entries []*Item, index int, entry *Item) {
+	entries[index].Key = entry.Key
+	entries[index].Val = entry.Val
+}
 
-	newNode.keys = append(newNode.keys, child.keys[ORDER:]...)
-	child.keys = child.keys[:ORDER-1]
+// 叶子节点的插入
+// 找到对应的叶子节点
+// 返回 false 表示修改，true 表示插入
+func (t *BPTree) insertIntoLeaf(node *BPTreeNode, entry *Item) bool {
+	// 进行节点查找
+	idx, ok := t.search(node, entry.Key)
+	if ok {
+		setNewEntry(node.Entries, idx, entry)
+		return false
+	}
+	// 开辟新的空间，多一个 nil
+	node.Entries = append(node.Entries, nil)
+	// 复制数据
+	copy(node.Entries[idx+1:], node.Entries[idx:])
+	// 在对应位置插入数据
+	node.Entries[idx] = entry
+	// 对当前节点进行 split 操作
+	t.split(node)
+	return true
+}
 
-	if !child.isLeaf {
-		newNode.children = append(newNode.children, child.children[ORDER:]...)
-		child.children = child.children[:ORDER]
+// 进行 split 操作
+func (t *BPTree) split(node *BPTreeNode) {
+	// 检查是否需要 split 操作
+	if !t.shouldSplit(node) {
+		return
+	}
+	if t.splitShow {
+		fmt.Println("node:", node, "start split")
+	}
+	// 根节点特殊处理
+	if node == t.Root {
+		t.splitRoot()
+		return
+	}
+	if t.isLeaf(node) {
+		t.splitLeaf(node)
 	} else {
-		newNode.next = child.next
-		child.next = newNode
+		// 非叶子节点处理
+		t.splitNonLeaf(node)
 	}
 }
 
-// insertNonFull 插入到非满节点
-func (tree *BPlusTree) insertNonFull(node *BPlusTreeNode, key int) {
-	i := len(node.keys) - 1
-	if node.isLeaf {
-		node.keys = append(node.keys, 0)
-		for i >= 0 && key < node.keys[i] {
-			node.keys[i+1] = node.keys[i]
-			i--
-		}
-		node.keys[i+1] = key
-	} else {
-		for i >= 0 && key < node.keys[i] {
-			i--
-		}
-		i++
-		if len(node.children[i].keys) == 2*ORDER-1 {
-			tree.splitChild(node, i)
-			if key > node.keys[i] {
-				i++
-			}
-		}
-		tree.insertNonFull(node.children[i], key)
+// 分割根节点
+func (t *BPTree) splitRoot() {
+	// 找到中间索引
+	mid := t.middle()
+	// 左边节点
+	left := &BPTreeNode{
+		Entries: append([]*Item(nil), t.Root.Entries[:mid]...),
+	}
+	// 右边节点
+	right := &BPTreeNode{
+		Entries: append([]*Item(nil), t.Root.Entries[mid:]...),
+	}
+	// 如果根节点不是叶子节点
+	if !t.isLeaf(t.Root) {
+		left.Children = append([]*BPTreeNode(nil), t.Root.Children[:mid+1]...)
+		right.Children = append([]*BPTreeNode(nil), t.Root.Children[mid+1:]...)
+		// 设置父节点
+		setParent(left.Children, left)
+		setParent(right.Children, right)
+	}
+	// 产生新的根节点
+	newRoot := &BPTreeNode{
+		Entries:  []*Item{t.Root.Entries[mid]},
+		Children: []*BPTreeNode{left, right},
+	}
+	// 更新根节点
+	left.Parent = newRoot
+	right.Parent = newRoot
+	t.Root = newRoot
+}
+
+// 设置父节点
+func setParent(nodes []*BPTreeNode, parent *BPTreeNode) {
+	for _, node := range nodes {
+		node.Parent = parent
 	}
 }
 
-// Search 查找键值在 B+ 树中的位置
-func (tree *BPlusTree) Search(key int) *BPlusTreeNode {
-	return tree.search(tree.root, key)
-}
-
-func (tree *BPlusTree) search(node *BPlusTreeNode, key int) *BPlusTreeNode {
-	i := 0
-	for i < len(node.keys) && key > node.keys[i] {
-		i++
-	}
-	if node.isLeaf {
-		if i < len(node.keys) && key == node.keys[i] {
-			return node
-		}
-		return nil
-	}
-	if i < len(node.keys) && key == node.keys[i] {
-		i++
-	}
-	return tree.search(node.children[i], key)
-}
-
-// Print 打印 B+ 树（调试用）
-func (tree *BPlusTree) Print() {
-	tree.print(tree.root, 0)
-}
-
-func (tree *BPlusTree) print(node *BPlusTreeNode, level int) {
-	fmt.Printf("Level %d: ", level)
-	for _, key := range node.keys {
-		fmt.Printf("%d ", key)
-	}
-	fmt.Println()
-	if !node.isLeaf {
-		for _, child := range node.children {
-			tree.print(child, level+1)
+// 查找节点
+func (t *BPTree) search(node *BPTreeNode, key int) (int, bool) {
+	for i, entry := range node.Entries {
+		if entry.Key == key {
+			return i, true
+		} else if entry.Key > key {
+			return i, false
 		}
 	}
+	return len(node.Entries), false
 }
 
-// 主函数
+// 分割叶子节点
+func (t *BPTree) splitLeaf(node *BPTreeNode) {
+	// 找到中间索引
+	mid := t.middle()
+	// 新建右节点
+	right := &BPTreeNode{
+		Entries: append([]*Item(nil), node.Entries[mid:]...),
+		Parent:  node.Parent,
+	}
+	// 更新当前节点
+	node.Entries = node.Entries[:mid]
+	// 插入到父节点
+	t.insertIntoParent(node, right, node.Entries[mid])
+}
+
+// 分割非叶子节点
+func (t *BPTree) splitNonLeaf(node *BPTreeNode) {
+	// 找到中间索引
+	mid := t.middle()
+	// 新建右节点
+	right := &BPTreeNode{
+		Entries:  append([]*Item(nil), node.Entries[mid+1:]...),
+		Children: append([]*BPTreeNode(nil), node.Children[mid+1:]...),
+		Parent:   node.Parent,
+	}
+	// 更新当前节点
+	node.Entries = node.Entries[:mid]
+	node.Children = node.Children[:mid+1]
+	// 设置父节点
+	setParent(right.Children, right)
+	// 插入到父节点
+	t.insertIntoParent(node, right, node.Entries[mid])
+}
+
+// 插入到父节点
+func (t *BPTree) insertIntoParent(left, right *BPTreeNode, entry *Item) {
+	if left.Parent == nil {
+		// 创建新的根节点
+		t.Root = &BPTreeNode{
+			Entries:  []*Item{entry},
+			Children: []*BPTreeNode{left, right},
+		}
+		left.Parent = t.Root
+		right.Parent = t.Root
+		return
+	}
+	parent := left.Parent
+	// 查找插入位置
+	idx, _ := t.search(parent, entry.Key)
+	// 插入父节点
+	parent.Entries = append(parent.Entries, nil)
+	copy(parent.Entries[idx+1:], parent.Entries[idx:])
+	parent.Entries[idx] = entry
+	parent.Children = append(parent.Children, nil)
+	copy(parent.Children[idx+2:], parent.Children[idx+1:])
+	parent.Children[idx+1] = right
+	right.Parent = parent
+	// 继续分裂父节点
+	t.split(parent)
+}
+
+// 是否为叶子节点
+func (t *BPTree) isLeaf(node *BPTreeNode) bool {
+	return len(node.Children) == 0
+}
+
+// 是否需要分裂
+func (t *BPTree) shouldSplit(node *BPTreeNode) bool {
+	return len(node.Entries) >= t.m
+}
+
+// 获取中间索引
+func (t *BPTree) middle() int {
+	return (t.m - 1) / 2
+}
+
+// String 可视化 B+ 树
+func (t *BPTree) String() string {
+	if t.Root == nil {
+		return "Empty tree"
+	}
+	var b strings.Builder
+	t.printNode(&b, t.Root, 0)
+	return b.String()
+}
+
+// printNode 递归打印节点
+func (t *BPTree) printNode(b *strings.Builder, node *BPTreeNode, level int) {
+	b.WriteString(strings.Repeat("  ", level))
+	for _, entry := range node.Entries {
+		b.WriteString(fmt.Sprintf("%d ", entry.Key))
+	}
+	b.WriteString("\n")
+	for _, child := range node.Children {
+		t.printNode(b, child, level+1)
+	}
+}
+
 func main() {
-	tree := NewBPlusTree()
-
-	//keys := []int{10, 20, 5, 6, 12, 30, 7, 17}
-	for key := range 10 {
-		tree.Insert(key + 1)
-	}
-
-	tree.Print()
-
-	searchKey := 6
-	node := tree.Search(searchKey)
-	if node != nil {
-		fmt.Printf("Found key %d in node with keys: %v\n", searchKey, node.keys)
-	} else {
-		fmt.Printf("Key %d not found in the tree.\n", searchKey)
-	}
+	tree := NewBPTree(3)
+	tree.Put(&Item{Key: 1, Val: "A"})
+	tree.Put(&Item{Key: 2, Val: "B"})
+	tree.Put(&Item{Key: 3, Val: "C"})
+	tree.Put(&Item{Key: 4, Val: "D"})
+	tree.Put(&Item{Key: 5, Val: "E"})
+	tree.Put(&Item{Key: 6, Val: "F"})
+	tree.Put(&Item{Key: 7, Val: "G"})
+	tree.Put(&Item{Key: 8, Val: "H"})
+	tree.Put(&Item{Key: 9, Val: "I"})
+	tree.Put(&Item{Key: 10, Val: "J"})
+	fmt.Println(tree.String())
 }

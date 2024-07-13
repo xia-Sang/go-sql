@@ -2,14 +2,15 @@ package tree
 
 import (
 	"fmt"
-	"github.com/xia-Sang/go-sql/util"
 	"testing"
+
+	"github.com/xia-Sang/go-sql/util"
 )
 
 func TestNewTree(t *testing.T) {
 	tree := NewBTree(3)
 	for i := range 9 {
-		tree.Put(&Item{i - 9, fmt.Sprintf("数据%d", i)})
+		tree.Put(&Item{i + 1, fmt.Sprintf("数据%d", i)})
 	}
 	log := Logger{}
 	log.PrintTree(tree.Root)
@@ -26,6 +27,10 @@ func TestNewTree(t *testing.T) {
 		t.Log(o.info())
 	}
 	t.Log(levelOrderTraversal(tree.Root))
+
+	tree.Remove(&Item{Key: 6})
+	log.PrintTree(tree.Root)
+	log.levelOrderTraversal(tree.Root)
 }
 func TestNewTree1(t *testing.T) {
 	tree := NewBTree(3)
